@@ -44,9 +44,9 @@ struct i2c_sam0_dev_config {
 };
 
 struct i2c_sam0_msg {
-	volatile uint8_t *buffer;
-	volatile uint32_t size;
-	volatile uint32_t status;
+	uint8_t *buffer;
+	uint32_t size;
+	uint32_t status;
 };
 
 struct i2c_sam0_dev_data {
@@ -135,18 +135,14 @@ static void i2c_sam0_isr(const struct device *dev)
 
 	i2c->INTFLAG.reg = status;
 
-	LOG_INF("INT");
-
 	if (i2c_sam0_terminate_on_error(dev)) {
 		return;
 	}
-	LOG_INF("INT2 %d %d %d", data->num_msgs, data->msgs[0].flags, data->msgs[1].flags);
 	/*
 	 * Directly send/receive next message if it is in the same direction and
 	 * the current message has no stop flag and the next message has no
 	 * restart flag.
 	 */
-	//const bool continue_next = (data->msg.size == 1) && (data->num_msgs > 1) && !(data->msgs[1].flags & I2C_MSG_RESTART) && !(data->msgs[0].flags & I2C_MSG_STOP) && ((status & (SERCOM_I2CM_INTFLAG_MB | SERCOM_I2CM_INTFLAG_SB)));
 	const bool continue_next = (data->msg.size == 1) && (data->num_msgs > 1) &&
 				   ((data->msgs[0].flags & I2C_MSG_RW_MASK) ==
 				    (data->msgs[1].flags & I2C_MSG_RW_MASK)) &&
@@ -165,6 +161,7 @@ static void i2c_sam0_isr(const struct device *dev)
 		data->msg.buffer++;
 		data->msg.size--;
 	} else if (status & SERCOM_I2CM_INTFLAG_SB) {
+		// Also check if all the bytes from a message have been read before continuing to the next msg
 		if (!continue_next && data->msg.size == 0) {
 			/*
 			 * If this is the last byte, then prepare for an auto
@@ -175,18 +172,17 @@ static void i2c_sam0_isr(const struct device *dev)
 		}
 
 		*data->msg.buffer = i2c->DATA.reg;
-		//*data->msg.buffer = 0xaa;
 		data->msg.buffer++;
 		data->msg.size--;
 
-
+		// Also check if all the bytes from a message have been read before continuing to the next msg
 		if (!continue_next && data->msg.size == 0) {
 			i2c->INTENCLR.reg = SERCOM_I2CM_INTENCLR_MASK;
 			k_sem_give(&data->sem);
 			return;
 		}
 	}
-
+	// Also check if all the bytes from a message have been read before continuing to the next msg
 	if (continue_next && data->msg.size == 0) {
 		data->msgs++;
 		data->num_msgs--;
@@ -400,7 +396,6 @@ static int i2c_sam0_transfer(const struct device *dev, struct i2c_msg *msgs,
 	data->msgs = msgs;
 
 	for (; data->num_msgs > 0;) {
-		LOG_INF("Flags: %d", data->msgs->flags);
 		if (!data->msgs->len) {
 			if ((data->msgs->flags & I2C_MSG_RW_MASK) == I2C_MSG_READ) {
 				return -EINVAL;
@@ -428,8 +423,7 @@ static int i2c_sam0_transfer(const struct device *dev, struct i2c_msg *msgs,
 
 			/* Set to auto ACK */
 			i2c->CTRLB.bit.ACKACT = 0;
-			LOG_INF("Set ack");
-			//wait_synchronization(i2c);
+			wait_synchronization(i2c);
 		}
 
 		if (data->msgs->flags & I2C_MSG_ADDR_10_BITS) {
