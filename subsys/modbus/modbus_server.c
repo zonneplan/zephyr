@@ -606,6 +606,12 @@ static bool mbs_fc06_hreg_write(struct modbus_context *ctx)
 
 	err = ctx->mbs_user_cb->holding_reg_wr(reg_addr, reg_val);
 
+	if (err == -EINVAL) {
+		LOG_INF("Illegal data value");
+		mbs_exception_rsp(ctx, MODBUS_EXC_ILLEGAL_DATA_VAL);
+		return true;
+	}
+
 	if (err != 0) {
 		LOG_INF("Register address not supported");
 		mbs_exception_rsp(ctx, MODBUS_EXC_ILLEGAL_DATA_ADDR);
