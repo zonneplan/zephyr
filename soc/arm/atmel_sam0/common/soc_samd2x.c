@@ -42,6 +42,7 @@ static void wait_gclk_synchronization(void)
 
 static void xosc32k_init(void)
 {
+#ifdef CONFIG_SOC_ATMEL_SAMD_XOSC32K
 	SYSCTRL->XOSC32K.reg = SYSCTRL_XOSC32K_STARTUP(6) |
 			       SYSCTRL_XOSC32K_XTALEN | SYSCTRL_XOSC32K_EN32K;
 
@@ -49,6 +50,7 @@ static void xosc32k_init(void)
 	/* Wait for the crystal to stabalise. */
 	while (!SYSCTRL->PCLKSR.bit.XOSC32KRDY) {
 	}
+#endif
 }
 
 static void osc32k_init(void)
@@ -85,17 +87,13 @@ static void dfll_init(void)
 	/* Route OSC8M to GCLK1 */
 	GCLK->GENCTRL.reg =
 	    GCLK_GENCTRL_ID(1) | GCLK_GENCTRL_SRC_OSC8M | GCLK_GENCTRL_GENEN;
-#elif defined(CONFIG_SOC_ATMEL_SAMD_OSC32K_AS_MAIN)
-	/* Route OSC8M to GCLK1 */
-	GCLK->GENCTRL.reg =
-	    GCLK_GENCTRL_ID(1) | GCLK_GENCTRL_SRC_OSC32K | GCLK_GENCTRL_GENEN;
 #else
 #error Unsupported main clock source.
 #endif
 
 	wait_gclk_synchronization();
 
-	/* Route GCLK1 to multiplexer 0 */
+	/* Route GCLK1 to multiplexer 1 */
 	GCLK->CLKCTRL.reg =
 	    GCLK_CLKCTRL_ID(0) | GCLK_CLKCTRL_GEN_GCLK1 | GCLK_CLKCTRL_CLKEN;
 	wait_gclk_synchronization();
@@ -114,11 +112,6 @@ static void dfll_init(void)
 	while (!SYSCTRL->PCLKSR.bit.DFLLRDY) {
 	}
 
-
-	// 32K xosc code
-
-	#if defined(CONFIG_SOC_ATMEL_SAMD_XOSC32K_AS_MAIN) || defined(CONFIG_SOC_ATMEL_SAMD_OSC8M_AS_MAIN)
-
 	SYSCTRL->DFLLCTRL.reg |= SYSCTRL_DFLLCTRL_MODE |
 #ifdef SYSCTRL_DFLLCTRL_WAITLOCK
 				 SYSCTRL_DFLLCTRL_WAITLOCK |
@@ -132,51 +125,6 @@ static void dfll_init(void)
 
 	while (!SYSCTRL->PCLKSR.bit.DFLLLCKC || !SYSCTRL->PCLKSR.bit.DFLLLCKF) {
 	}
-	#elif defined(CONFIG_SOC_ATMEL_SAMD_OSC32K_AS_MAIN)
-
-	 #define NVM_SW_CALIB_DFLL48M_COARSE_VAL 58
-
-  // Turn on DFLL
-	uint32_t coarse =( *((uint32_t *)(NVMCTRL_OTP4) + (NVM_SW_CALIB_DFLL48M_COARSE_VAL / 32)) >> (NVM_SW_CALIB_DFLL48M_COARSE_VAL % 32) )
-			& ((1 << 6) - 1);
-	if (coarse == 0x3f) {
-	coarse = 0x1f;
-	}
-	// TODO(tannewt): Load this value from memory we've written previously. There
-	// isn't a value from the Atmel factory.
-	uint32_t fine = 0x1ff;
-
-	SYSCTRL->DFLLVAL.bit.COARSE = coarse;
-	SYSCTRL->DFLLVAL.bit.FINE = fine;
-	/* Write full configuration to DFLL control register */
-	SYSCTRL->DFLLMUL.reg = SYSCTRL_DFLLMUL_CSTEP( 0x1f / 4 ) | // Coarse step is 31, half of the max value
-				SYSCTRL_DFLLMUL_FSTEP( 10 ) |
-				SYSCTRL_DFLLMUL_MUL( (48000) ) ;
-
-	SYSCTRL->DFLLCTRL.reg = 0;
-
-	while ( (SYSCTRL->PCLKSR.reg & SYSCTRL_PCLKSR_DFLLRDY) == 0 )
-	{
-	/* Wait for synchronization */
-	}
-
-	SYSCTRL->DFLLCTRL.reg =  SYSCTRL_DFLLCTRL_MODE |
-				SYSCTRL_DFLLCTRL_CCDIS |
-				SYSCTRL_DFLLCTRL_USBCRM | /* USB correction */
-				SYSCTRL_DFLLCTRL_BPLCKC;
-
-	while (!SYSCTRL->PCLKSR.bit.DFLLRDY) {
-	}
-
-	/* Enable the DFLL */
-	SYSCTRL->DFLLCTRL.bit.ENABLE = 1;
-
-
-	#else
-	#error Unsupported main clock source.
-	#endif
-
-	// end xosc code
 
 	while (!SYSCTRL->PCLKSR.bit.DFLLRDY) {
 	}
@@ -225,6 +173,7 @@ static void dividers_init(void)
 }
 
 static void enable_bod33() {
+	#if defined(CONFIG_SOC_ATMEL_SAMD_ENABLE_BOD33)
 	/* Disable the brown-out detector during configuration,
 	otherwise it might misbehave and reset the
 	microcontroller. */
@@ -237,7 +186,16 @@ static void enable_bod33() {
 	SYSCTRL->BOD33.reg = (
 	/* This sets the minimum voltage level to 3.0v - 3.2v.
 	See datasheet table 37-21. */
-	SYSCTRL_BOD33_LEVEL(48) |
+	#if defined(CONFIG_SOC_ATMEL_SAMD_BOD33_V1_72)
+		#define BOD33_LEVEL 6
+	#elif defined(CONFIG_SOC_ATMEL_SAMD_BOD33_V1_76)
+		#define BOD33_LEVEL 7
+	#elif defined(CONFIG_SOC_ATMEL_SAMD_BOD33_V2_89)
+		#define BOD33_LEVEL 39
+	#elif defined(CONFIG_SOC_ATMEL_SAMD_BOD33_V3_25)
+		#define BOD33_LEVEL 48
+	#endif
+	SYSCTRL_BOD33_LEVEL(BOD33_LEVEL) |
 	/* Since the program is waiting for the voltage to rise,
 	don't reset the microcontroller if the voltage is too
 	low. */
@@ -263,6 +221,7 @@ static void enable_bod33() {
 	SYSCTRL->BOD33.reg |= SYSCTRL_BOD33_ACTION_RESET;
 
 	SYSCTRL->BOD33.bit.ENABLE = 1;
+	#endif
 }
 
 static int atmel_samd_init(const struct device *arg)
@@ -273,17 +232,12 @@ static int atmel_samd_init(const struct device *arg)
 
 	key = irq_lock();
 
-#if defined(CONFIG_SOC_ATMEL_SAMD_ENABLE_BOD33)
 	enable_bod33();
-#endif
-
 	flash_waitstates_init();
 	osc8m_init();
 	osc32k_init();
 	xosc_init();
-	#ifdef CONFIG_SOC_ATMEL_SAMD_XOSC32K
 	xosc32k_init();
-	#endif
 	dfll_init();
 	gclks_init();
 	dividers_init();
