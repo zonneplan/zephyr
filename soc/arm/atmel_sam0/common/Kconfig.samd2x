@@ -33,4 +33,23 @@ config SOC_ATMEL_SAMD_OSC8M_AS_MAIN
 
 endchoice
 
+config SOC_ATMEL_SAMD_ENABLE_BOD33
+	bool "BOD33"
+
+choice
+	prompt "BOD33 level"
+	help
+	  Selects the voltage at which the brown out will leave reset state.
+	  for the exact voltages see the datasheet table 37-21
+
+	config SOC_ATMEL_SAMD_BOD33_V1_72
+		bool "BOD33_V1_72"
+	config SOC_ATMEL_SAMD_BOD33_V1_76
+		bool "BOD33_V1_76"
+	config SOC_ATMEL_SAMD_BOD33_V2_89
+		bool "BOD33_V2_89"
+	config SOC_ATMEL_SAMD_BOD33_V3_25
+		bool "BOD33_V3_25"
+endchoice
+
 endif # SOC_SERIES_SAMD20 || SOC_SERIES_SAMD21
